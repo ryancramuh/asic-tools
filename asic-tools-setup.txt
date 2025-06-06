@@ -1,0 +1,39 @@
+#########################################
+# INSTALLATION GUIDE
+
+#IN WSL RUN
+sudo apt update && sudo apt install -y build-essential git curl wget unzip zip tar gdb htop net-tools man-db lsb-release software-properties-common python3 python3-pip python3-venv cmake valgrind openssh-client nodejs npm default-jdk golang tmux neofetch tree nano vim lsof
+
+
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+sudo apt install -y openssh-client
+
+ssh-keygen
+
+#just hit enter until it prints the hash if you don't want a password (recommended)
+
+cat ~/.ssh/id_e25119.pub
+
+#copy this 
+# go to GitHub settings, add SSH key
+
+eval $(ssh-agent -s)
+
+# Now you should be able to git clone
+
+git clone git@github.com:ryancramuh/CARP.git
+
+git clone git@github.com:ryancramuh/asic-tools.git
+
+# Now we must setup docker
+# Ensure the latest version of Docker Desktop is installed
+# make sure WSL2 integration is turned on by going to 
+# Settings --> Resources --> WSL Integration --> Toggle Distro ON
+
+sudo ./asic-tools/install.sh
+./asic-tools/run.sh
+
+# you should now see
+
+ubuntu@asic$ 
