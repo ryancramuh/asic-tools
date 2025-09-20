@@ -154,6 +154,9 @@ synth:
 	    tail -n 20 synth.log && \
 	    exit 1 )
 
+.PHONY: sta
+sta:
+	sta scripts/sta.tcl
 
 OPENLANE_CONF ?= scripts/config.*
 openlane:

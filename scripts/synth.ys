@@ -1,0 +1,13 @@
+read_verilog -sv rtl/cmp_32.sv
+hierarchy -check -top cmp_32
+proc
+opt
+techmap
+abc -liberty /foss/pdks/volare/sky130/versions/0fe599b2afb6708d281543108caf8310912f54af/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ss_100C_1v40.lib
+opt flatten
+tee -o synth/cell_stats.log stat
+show -format dot -prefix synth/cmp_32_graph
+viz -format dot -prefix synth/cmp_32_viz
+write_rtlil synth/cmp_32_rtl.il
+write_verilog -sv synth/cmp_32_synth.sv
+write_spice -top cmp_32 synth/cmp_32_netlist.spice

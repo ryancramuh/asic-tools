@@ -1,0 +1,6 @@
+
+gen_spice: spice_maker.o
+    gcc -o gen_spice spice_maker.o 
+
+spice_maker.o: spice_maker.c
+    gcc -Wall -Wextra -Werror -pedantic -std=gnu11 -c spice_maker.c 
