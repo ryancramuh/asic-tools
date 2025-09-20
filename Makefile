@@ -1,22 +1,21 @@
 INC_DIR := ./include
 
 RTL_SRCS 	:= $(shell find rtl -name '*.sv' -or -name '*.v')
-
 INCLUDE_DIRS := $(sort $(dir $(shell find . -name '*.svh')))
 RTL_DIRS	 := $(sort $(dir $(RTL_SRCS)))
 # Include both Include and RTL directories for linting
 LINT_INCLUDES := $(foreach dir, $(INCLUDE_DIRS) $(RTL_DIRS), -I$(realpath $(dir))) -I$(PDKPATH) 
 
-TEST_DIR = ./tests
-TEST_SUBDIRS = $(shell cd $(TEST_DIR) && ls -d */ | grep -v "__pycache__" )
-TESTS = $(TEST_SUBDIRS:/=)
+SIM_DIR = ./sim
+SIM_SUBDIRS = $(shell cd $(SIM_DIR) && ls -d */ | grep -v "__pycache__" )
+SIMS = $(SIM_SUBDIRS:/=)
 
 # Main Linter and Simulatior is Verilator
 LINTER := verilator
 SIMULATOR := verilator
 SIMULATOR_ARGS := --binary --timing --trace --trace-structs \
-	--assert --timescale 1ns --quiet  
-SIMULATOR_BINARY := ./obj_dir/V*
+	--assert --timescale 1ns --quiet --Mdir verilator_lib
+SIMULATOR_BINARY := ./verilator_lib/V*
 SIMULATOR_SRCS := *.sv
 # Optional use of Icarus as Linter and Simulator
 ifdef ICARUS
@@ -36,6 +35,7 @@ SIMULATOR_BINARY := a.out
 SIMULATOR_SRCS = $(realpath gl)/*  *.sv
 endif
 
+
 LINT_OPTS += --lint-only --timing $(LINT_INCLUDES)
 
 # Text formatting for tests
@@ -50,7 +50,30 @@ TEST_ORANGE := $(shell tput setaf 214)
 TEST_RED := $(shell tput setaf 1)
 TEST_RESET := $(shell tput sgr0)
 
-all: lint_all tests
+.PHONY: rars
+rars:
+	java -jar rars.jar
+
+.PHONY: list-versions list-libs list-spice list-magicrc logs
+
+list-versions:
+	@./scripts/extract_version.sh > logs/tool-version.log
+
+list-libs:
+	@find /foss/pdks/volare/sky130/versions -name "*.lib" \
+	    | grep sky130_fd_sc_hd > logs/pdk_libs.log
+
+list-spice:
+	@find /foss/pdks/volare/sky130/versions -name "*.spice" \
+	    | grep sky130_fd_sc_hd > logs/pdk_spice.log
+
+list-magicrc:
+	@find /foss/pdks/volare/sky130/versions/ -name "*.magicrc" | grep sky130A > logs/pdk_magicrc.log
+
+# larger target
+logs: list-versions list-libs list-spice list-magicrc
+
+all: lint_all sim
 
 lint: lint_all
 
@@ -76,34 +99,35 @@ lint_top:
 	$(LINTER) $(LINT_OPTS) --top-module $(TOP_MODULE) $(TOP_FILE)
 
 
-tests: $(TESTS) 
+sim: $(SIMS) 
 
-tests/%: FORCE
+sim/%: FORCE
 	make -s $(subst /,, $(basename $*))
 
-itests: 
-	@ICARUS=1 make tests
+isim: 
+	@ICARUS=1 make sim
 
 RECENT=$(shell ls runs | tail -n 1)
 GL_NAME =$(shell ls runs/$(RECENT)/final/pnl/)
-gl_tests:
+.PHONY: gl
+glsim:
 	@mkdir -p gl
 	@cat scripts/gatelevel.vh runs/$(RECENT)/final/pnl/$(GL_NAME) > gl/$(GL_NAME)
-	@GL=1 make tests
+	@GL=1 make sim
 
-.PHONY: $(TESTS)
-$(TESTS): 
+.PHONY: $(SIMS)
+$(SIMS): 
 	@printf "\n$(GREEN)$(BOLD) ----- Running Test: $@ ----- $(RESET)\n"
 	@printf "\n$(BOLD) Building with $(SIMULATOR)... $(RESET)\n"
 
 # Build With Simulator
-	@cd $(TEST_DIR)/$@;\
+	@cd $(SIM_DIR)/$@;\
 		$(SIMULATOR) $(SIMULATOR_ARGS) $(SIMULATOR_SRCS) $(LINT_INCLUDES) $(SIM_TOP) > build.log
 	
 	@printf "\n$(BOLD) Running... $(RESET)\n"
 
 # Run Binary and Check for Error in Result
-	@if cd $(TEST_DIR)/$@;\
+	@if cd $(SIM_DIR)/$@;\
 		./$(SIMULATOR_BINARY) > results.log \
 		&& !( cat results.log | grep -qi error ) \
 		then \
@@ -113,14 +137,25 @@ $(TESTS):
 			cat results.log; \
 		fi; \
 
-COCOTEST_DIR = ./cocotests
-COCOTEST_SUBDIRS = $(shell cd $(COCOTEST_DIR) && ls -d */ | grep -v "__pycache__" )
-COCOTESTS = $(COCOTEST_SUBDIRS:/=)
+COCOSIM_DIR = ./cocotests
+COCOSIM_SUBDIRS = $(shell cd $(COCOSIM_DIR) && ls -d */ | grep -v "__pycache__" )
+COCOSIMS = $(COCOSIM_SUBDIRS:/=)
 .PHONY: cocotests
 cocotests:
-	@$(foreach test,  $(COCOTESTS), make -sC $(COCOTEST_DIR)/$(test);)
+	@$(foreach test,  $(COCOSIMS), make -sC $(COCOSIM_DIR)/$(test);)
 
-OPENLANE_CONF ?= config.*
+SYNTH_SRC = scripts/synth.ys
+.PHONY: synth
+synth:
+	@printf "$(GREEN)========== Running Synthesis ===========$(RESET)\n"
+	@yosys -s $(SYNTH_SRC) > logs/synth.log 2>&1 && \
+	  echo "$(GREEN)Synthesis PASSED.$(RESET)" || \
+	  ( echo "$(RED)Synthesis FAILED! See logs/synth.log for details.$(RESET)" && \
+	    tail -n 20 synth.log && \
+	    exit 1 )
+
+
+OPENLANE_CONF ?= scripts/config.*
 openlane:
 	@`which openlane` --flow Classic $(OPENLANE_CONF)
 	@cd runs && rm -f recent && ln -sf `ls | tail -n 1` recent
@@ -136,11 +171,24 @@ openroad:
 
 .PHONY: clean
 clean:
-	rm -f `find tests -iname "*.vcd"`
-	rm -f `find tests -iname "a.out"`
-	rm -f `find tests -iname "*.log"`
-	rm -rf `find tests -iname "obj_dir"`
+	@printf "Removing Build Files: \n"
+
+	@find sim -iname "*.vcd"  -exec rm -v {} \;
+	@find sim -iname "a.out"  -exec rm -v {} \;
+	@find sim -iname "*.log"  -exec rm -v {} \;
+	@find sim -iname "obj_dir" -exec rm -rv {} \;
+
+	@find synth -iname "*.spice" -exec rm -v {} \;
+	@find synth -iname "*.dot"   -exec rm -v {} \;
+	@find synth -iname "*.sp"    -exec rm -v {} \;
+	@find synth -iname "*.log"   -exec rm -v {} \;
+	@find synth -iname "*.sv"    -exec rm -v {} \;
+	@find synth -iname "*.v"     -exec rm -v {} \;
+	@find synth -iname "*.il"    -exec rm -v {} \;
+
+	@find logs -iname "*.log"    -exec rm -v {} \;
 
 .PHONY: VERILOG_SOURCES
 VERILOG_SOURCES: 
 	@echo $(realpath $(RTL_SRCS))
+
