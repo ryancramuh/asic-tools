@@ -40,8 +40,23 @@ LINT_OPTS += --lint-only --timing $(LINT_INCLUDES)
 
 # Text formatting for tests
 BOLD = `tput bold`
+GOLD = `tput setaf 220`
 GREEN = `tput setaf 2`
-ORANG = `tput setaf 214`
+BLUE    = `tput setaf 4`
+MAGENTA = `tput setaf 5`
+CYAN    = `tput setaf 6`
+WHITE   = `tput setaf 7`
+GREY    = `tput setaf 8`   # dim gray
+BRIGHT_RED    = `tput setaf 9`
+BRIGHT_GREEN  = `tput setaf 10`
+BRIGHT_YELLOW = `tput setaf 11`
+BRIGHT_BLUE   = `tput setaf 12`
+BRIGHT_MAGENTA= `tput setaf 13`
+BRIGHT_CYAN   = `tput setaf 14`
+BRIGHT_WHITE  = `tput setaf 15`
+ORANGE        = `tput setaf 214`
+PINK          = `tput setaf 213`
+PURPLE        = `tput setaf 93`
 RED = `tput setaf 1`
 RESET = `tput sgr0`
 
@@ -52,7 +67,7 @@ TEST_RESET := $(shell tput sgr0)
 
 .PHONY: rars
 rars:
-	java -jar rars.jar
+	java -jar asm/rars.jar
 
 .PHONY: list-versions list-libs list-spice list-magicrc logs
 
@@ -98,22 +113,29 @@ lint_top:
 	@printf "Linting Top Level Module: $(TOP_FILE)\n";
 	$(LINTER) $(LINT_OPTS) --top-module $(TOP_MODULE) $(TOP_FILE)
 
-
+## Verilator Simulation ###
 sim: $(SIMS) 
 
 sim/%: FORCE
 	make -s $(subst /,, $(basename $*))
 
+## Icarus Simulation ###
+
 isim: 
 	@ICARUS=1 make sim
 
+isim/%: FORCE
+	@$(MAKE) -s ICARUS=1 sim/$*
+
+
+## Gate Level Simulation ###
 RECENT=$(shell ls runs | tail -n 1)
 GL_NAME =$(shell ls runs/$(RECENT)/final/pnl/)
-.PHONY: gl
-glsim:
+
+glsim/%: FORCE
 	@mkdir -p gl
 	@cat scripts/gatelevel.vh runs/$(RECENT)/final/pnl/$(GL_NAME) > gl/$(GL_NAME)
-	@GL=1 make sim
+	@$(MAKE) -s GL=1 sim/$*
 
 .PHONY: $(SIMS)
 $(SIMS): 
@@ -155,13 +177,21 @@ synth:
 	    exit 1 )
 
 .PHONY: sta
-sta:
+sta: 
+	@printf "$(ORANGE)STA requires an sta.tcl to be configured inside of scripts$(RESET)\n"
 	sta scripts/sta.tcl
-
-OPENLANE_CONF ?= scripts/config.*
+	
+OPENLANE_CONF ?= config.*
 openlane:
 	@`which openlane` --flow Classic $(OPENLANE_CONF)
 	@cd runs && rm -f recent && ln -sf `ls | tail -n 1` recent
+
+openlane_sta:
+	@`which openlane` --flow Classic $(OPENLANE_CONF) -T openroad.floorplan
+	@cd runs && rm -f recent && ln -sf `ls | tail -n 1` recent
+
+
+
 
 %.json %.yaml: FORCE
 	@echo $@
@@ -190,6 +220,74 @@ clean:
 	@find synth -iname "*.il"    -exec rm -v {} \;
 
 	@find logs -iname "*.log"    -exec rm -v {} \;
+
+.PHONY: help
+help:
+	@printf "\n$(GREEN)Linting$(RESET)\n" 
+	@printf "$(GREEN)lint$(RESET) to lint all your rtl\n"
+
+	@printf "\n$(BRIGHT_CYAN)Verilator Simulation (0,1)$(RESET)\n"
+	@printf "$(BRIGHT_CYAN)sim$(RESET) to simulate all testbenches with Verilator\n"
+	@printf "$(BRIGHT_CYAN)sim/$(RESET) to simulate one testbench with Verilator\n"
+	
+	@printf "\n$(ORANGE)Icarus Simulation (1, 0, X, Z)$(RESET)\n"
+	@printf "$(ORANGE)isim$(RESET) to simulate all testbenches with Icarus Verilog\n"
+	@printf "$(ORANGE)isim/$(RESET) to simulate one testbench with Icarus Verilog\n"
+	
+	@printf "\n$(BRIGHT_BLUE)Icarus Gate-Level Simulation (1, 0, X, Z)$(RESET)\n"
+	@printf "$(BRIGHT_BLUE)glsim/$(RESET) to simulate your design with gate-level simulation with Icarus\n"
+
+	@printf "\n$(PURPLE)Synthesis$(RESET)\n"
+	@printf "$(PURPLE)synth$(RESET) runs synthesis with Yosys 0.51\n"
+	@printf "requires synth.ys to be configured in scripts/ \n"
+	
+	@printf "\n$(MAGENTA)OpenSTA$(RESET)\n"
+	@printf "$(MAGENTA)sta$(RESET)\n"
+	@printf "requires sta.tcl to be configured in scripts/\n" 
+	@printf "run \"make openlane_sta\" before trying this\n"
+	
+	@printf "\n$(BLUE)Openlane$(RESET)\n"
+	@printf "$(BLUE)openlane$(RESET) runs the OpenLane 2.0 Classic Flow\n"
+	@printf "requires config.yaml or config.json in the project home\n"
+
+	@printf "\n$(RED)RARS$(RESET)\n"
+	@printf "$(RED)rars$(RESET) opens RARS\n"
+	@printf "requires rars.jar in asm/\n"
+
+	@printf "\n$(PINK)Log all relevant info about tools versions and pdk paths$(RESET)\n"
+	@printf "$(PINK)log$(RESET) loads .logs with relevant info\n"
+
+	@printf "\n$(BRIGHT_YELLOW)Remove build artifacts and logs$(RESET)\n"
+	@printf "$(BRIGHT_YELLOW)clean$(RESET) removes tool generated output\n"
+
+	@printf "\n$(GOLD)Project Generation$(RESET)\n"
+	@printf "$(GOLD)proj$(RESET)\n"
+	@printf "pass PROJECT= to name your project\n" 
+	@printf "ex: make proj PROJECT=mul\n\n"
+
+PROJECT ?= project
+
+# Creates project using Makefile, scripts/, and PROJECT_NAME
+.PHONY: proj
+proj:
+	@if [ ! -d scripts ]; then \
+		echo "Error: scripts/ directory not found!"; \
+		exit 1; \
+	fi
+	@echo "Creating $(PROJECT)/ with subfolders rtl, sim, logs, synth, and scripts and Makefile\n"
+	@mkdir -p $(PROJECT)/rtl
+	@mkdir -p $(PROJECT)/sim
+	@mkdir -p $(PROJECT)/synth
+	@mkdir -p $(PROJECT)/logs
+	@mkdir -p $(PROJECT)/asm
+	@touch $(PROJECT)/rtl/$(PROJECT).sv
+	@mkdir $(PROJECT)/sim/tb_$(PROJECT)
+	@touch $(PROJECT)/sim/tb_$(PROJECT)/tb_$(PROJECT).sv
+	@touch $(PROJECT)/config.yaml
+	@echo "Copying scripts/ into $(PROJECT)/"
+	@cp -r scripts $(PROJECT)/
+	@echo "Copying Makefile..."
+	@cp Makefile $(PROJECT)/
 
 .PHONY: VERILOG_SOURCES
 VERILOG_SOURCES: 
