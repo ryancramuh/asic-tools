@@ -292,4 +292,3 @@ proj:
 .PHONY: VERILOG_SOURCES
 VERILOG_SOURCES: 
 	@echo $(realpath $(RTL_SRCS))
-
