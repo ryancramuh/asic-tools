@@ -15,6 +15,9 @@ HOST=asic
 
 if [ ! -d $ABS_DIR/workspace ]; then
 	mkdir -p $ABS_DIR/workspace
+	cp -r scripts/ workspace/
+	cp Makefile workspace
+	cp -r examples/ workspace/
 fi
 
 
